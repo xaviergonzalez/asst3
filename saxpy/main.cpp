@@ -56,8 +56,11 @@ int main(int argc, char** argv)
     printCudaInfo();
     
     printf("Running 3 timing tests:\n");
+    printf("\n");
     for (int i=0; i<3; i++) {
+      printf("Iteration %d:\n", i);
       saxpyCuda(N, alpha, xarray, yarray, resultarray);
+      printf("\n");
     }
 
     delete [] xarray;
