@@ -43,6 +43,9 @@ void saxpyCuda(int N, float alpha, float* xarray, float* yarray, float* resultar
     // must read both input arrays (xarray and yarray) and write to
     // output array (resultarray)
     int totalBytes = sizeof(float) * 3 * N;
+    int reducedN = N / (1024 * 1024);
+    int totalGigs = reducedN * 3 * sizeof(float);
+    printf("N=%d so %d GB\n", N, totalGigs / 1024);
 
     // compute number of blocks and threads per block.  In this
     // application we've hardcoded thread blocks to contain 512 CUDA
