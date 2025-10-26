@@ -27,6 +27,31 @@ static inline int nextPow2(int n) {
     return n;
 }
 
+static inline void dump_device_int_array(const char* name,
+                                         const int* dptr, int n, int two_d)
+{
+    int* h = (int*)malloc(n * sizeof(int));
+    if (!h) { fprintf(stderr, "malloc failed\n"); return; }
+
+    // Ensure all prior kernels finished before we read
+    cudaDeviceSynchronize();
+
+    cudaError_t err = cudaMemcpy(h, dptr, n*sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy failed in dump (%s)\n", cudaGetErrorString(err));
+        free(h);
+        return;
+    }
+    printf("two_d=%d", two_d);
+    fprintf(stderr, "%s (n=%d):", name, n);
+    for (int i = 0; i < n; ++i) {
+        if ((i % 16) == 0) fprintf(stderr, "\n%6d:", i);
+        fprintf(stderr, " %d", h[i]);
+    }
+    fprintf(stderr, "\n");
+    free(h);
+}
+
 // exclusive_scan --
 //
 // Implementation of an exclusive scan on global memory array `input`,
@@ -42,6 +67,40 @@ static inline int nextPow2(int n) {
 // Also, as per the comments in cudaScan(), you can implement an
 // "in-place" scan, since the timing harness makes a copy of input and
 // places it in result
+
+__global__ void
+upsweep_kernel(int N, int two_d, int two_dplus1, int* array){
+/* this kernel is used for the upsweep in the pscan
+    Args:
+        N: length of the array
+        two_dplus_1: current receptive field
+        array: input array to be processed, device array
+*/
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;  // processor index
+    int arr_pos = (idx + 1) * two_dplus1 - 1;  // position in the array to be processed
+    if (arr_pos < N-1)
+        array[arr_pos] += array[arr_pos - two_d];
+}
+
+__global__ void
+downsweep_add(int N, int two_d, int two_dplus1, int* array){
+    /* First parallel op in each step of downsweep*/
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int arr_pos = (idx + 1) * two_dplus1 - 1;
+    if (arr_pos < N)
+        array[arr_pos] += array[arr_pos - two_d];
+}
+
+__global__ void
+downsweep_set(int N, int two_d, int two_dplus1, int* array){
+    /* Second parallel op in each step of downsweep*/
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int arr_pos = (idx + 1) * two_dplus1 - 1;
+    if (arr_pos < N) {
+       array[arr_pos - two_d] = array[arr_pos] - array[arr_pos - two_d];
+    }
+}
+
 void exclusive_scan(int* input, int N, int* result)
 {
 
@@ -53,9 +112,33 @@ void exclusive_scan(int* input, int N, int* result)
     // on the CPU.  Your implementation will need to make multiple calls
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
+    
+    // set last element to zero
+    cudaMemset(result + N - 1, 0, sizeof(int));
 
+    // upsweep phase
+    for (int two_d = 1; two_d < N; two_d *= 2) {
+        int two_dplus1 = two_d * 2;
+        // launch upsweep kernel
+        int blocks = N / (two_dplus1 * THREADS_PER_BLOCK) + 1;
+        upsweep_kernel<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
+        cudaDeviceSynchronize();
+        // dump_device_int_array("up", result, N, two_d);
+    }
+
+    // downsweep phase
+    for (int two_d = N/2; two_d >= 1; two_d /= 2) {
+        int two_dplus1 = 2*two_d;
+        int blocks = N / (two_dplus1 * THREADS_PER_BLOCK) + 1;
+        downsweep_add<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
+        // dump_device_int_array("d1", result, N, two_d);
+        cudaDeviceSynchronize();
+        downsweep_set<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
+        // dump_device_int_array("d2", result, N, two_d);
+    }
 
 }
+
 
 
 //

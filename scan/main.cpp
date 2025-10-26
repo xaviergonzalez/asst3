@@ -76,6 +76,19 @@ int cpu_find_repeats(int *start, int length, int *output) {
     return count;
 }
 
+/* student added*/
+
+static inline void dump_int_array(const char* name, const int* a, int n) {
+    fprintf(stderr, "%s (n=%d):", name, n);
+    for (int i = 0; i < n; ++i) {
+        if ((i % 16) == 0) fprintf(stderr, "\n%6d:", i);  // new row every 16
+        fprintf(stderr, " %d", a[i]);
+    }
+    fprintf(stderr, "\n");
+}
+
+/* end student added */
+
 
 int main(int argc, char** argv) {
   
@@ -173,6 +186,10 @@ int main(int argc, char** argv) {
                         "Error: Device exclusive_scan outputs incorrect result."
                         " A[%d] = %d, expecting %d.\n",
                         i, resultarray[i], checkarray[i]);
+                /* student added*/
+                dump_int_array("resultarray", resultarray, N);
+                dump_int_array("checkarray",  checkarray,  N);
+                /* ended student added*/
                 exit(1);
             }
         }
