@@ -91,24 +91,34 @@ upsweep_kernel(int N, int two_d, int two_dplus1, int* array){
         array[arr_pos] += array[arr_pos - two_d];
 }
 
-__global__ void
-downsweep_add(int N, int two_d, int two_dplus1, int* array){
-    /* First parallel op in each step of downsweep*/
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int arr_pos = (idx + 1) * two_dplus1 - 1;
-    if (arr_pos < N)
-        array[arr_pos] += array[arr_pos - two_d];
-}
+ __global__ void downsweep_kernel(int N, int two_d, int two_dplus1, int* array) {
+      int idx = blockIdx.x * blockDim.x + threadIdx.x;
+      int arr_pos = (idx + 1) * two_dplus1 - 1;
+      if (arr_pos < N) {
+          int temp = array[arr_pos - two_d];
+          array[arr_pos - two_d] = array[arr_pos];
+          array[arr_pos] += temp;
+      }
+  }
 
-__global__ void
-downsweep_set(int N, int two_d, int two_dplus1, int* array){
-    /* Second parallel op in each step of downsweep*/
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int arr_pos = (idx + 1) * two_dplus1 - 1;
-    if (arr_pos < N) {
-       array[arr_pos - two_d] = array[arr_pos] - array[arr_pos - two_d];
-    }
-}
+// __global__ void
+// downsweep_add(int N, int two_d, int two_dplus1, int* array){
+//     /* First parallel op in each step of downsweep*/
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int arr_pos = (idx + 1) * two_dplus1 - 1;
+//     if (arr_pos < N)
+//         array[arr_pos] += array[arr_pos - two_d];
+// }
+
+// __global__ void
+// downsweep_set(int N, int two_d, int two_dplus1, int* array){
+//     /* Second parallel op in each step of downsweep*/
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int arr_pos = (idx + 1) * two_dplus1 - 1;
+//     if (arr_pos < N) {
+//        array[arr_pos - two_d] = array[arr_pos] - array[arr_pos - two_d];
+//     }
+// }
 
 void exclusive_scan(int* input, int N, int* result)
 {
@@ -155,10 +165,11 @@ void exclusive_scan(int* input, int N, int* result)
         else
             threads_per_block = THREADS_PER_BLOCK;
         int blocks = CEIL_DIV(threads_needed, threads_per_block);
-        downsweep_add<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
+        downsweep_kernel<<<blocks, threads_per_block>>>(N, two_d, two_dplus1,  result);
+        // downsweep_add<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
         // dump_device_int_array("d1", result, N, two_d, blocks, threads_per_block);
         // cudaDeviceSynchronize();
-        downsweep_set<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
+        // downsweep_set<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
         // dump_device_int_array("d2", result, N, two_d, blocks, threads_per_block);
     }
 
