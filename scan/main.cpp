@@ -182,18 +182,26 @@ int main(int argc, char** argv) {
         // validate results
         for (int i = 0; i < N; i++) {
             if (checkarray[i] != resultarray[i]) {
-                fprintf(stderr,
-                        "Error: Device exclusive_scan outputs incorrect result."
-                        " A[%d] = %d, expecting %d.\n",
-                        i-1, resultarray[i-1], checkarray[i-1]);
-                fprintf(stderr,
-                        "Error: Device exclusive_scan outputs incorrect result."
-                        " A[%d] = %d, expecting %d.\n",
-                        i, resultarray[i], checkarray[i]);
-                fprintf(stderr,
-                        "Error: Device exclusive_scan outputs incorrect result."
-                        " A[%d] = %d, expecting %d.\n",
-                        i+1, resultarray[i+1], checkarray[i+1]);        
+                for (int j = 0; j <= 10; j++) {
+                    int idx = i + j;
+                    if (idx >= 0 && idx < N) {
+                        fprintf(stderr,
+                                "Check A[%d] = %d, Result A[%d] = %d\n",
+                                idx, checkarray[idx], idx, resultarray[idx]);
+                    }
+                }
+                // fprintf(stderr,
+                        // "Error: Device exclusive_scan outputs incorrect result."
+                        // " A[%d] = %d, expecting %d.\n",
+                        // i-1, resultarray[i-1], checkarray[i-1]);
+                // fprintf(stderr,
+                //         "Error: Device exclusive_scan outputs incorrect result."
+                //         " A[%d] = %d, expecting %d.\n",
+                //         i, resultarray[i], checkarray[i]);
+                // fprintf(stderr,
+                //         "Error: Device exclusive_scan outputs incorrect result."
+                //         " A[%d] = %d, expecting %d.\n",
+                //         i+1, resultarray[i+1], checkarray[i+1]);        
                 /* student added*/
                 // dump_int_array("resultarray", resultarray, N+1);
                 // dump_int_array("checkarray",  checkarray,  N+1);

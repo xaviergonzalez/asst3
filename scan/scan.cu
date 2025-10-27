@@ -12,7 +12,9 @@
 
 #include "CycleTimer.h"
 
-#define THREADS_PER_BLOCK 256
+#define THREADS_PER_BLOCK 512
+
+#define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
 
 
 // helper function to round an integer up to the next power of 2
@@ -28,7 +30,11 @@ static inline int nextPow2(int n) {
 }
 
 static inline void dump_device_int_array(const char* name,
-                                         const int* dptr, int n, int two_d)
+                                         const int* dptr,
+                                         int n, 
+                                         int two_d, 
+                                         int blocks, 
+                                         int threads_per_block)
 {
     /*
     int* h = (int*)malloc(n * sizeof(int));
@@ -45,7 +51,7 @@ static inline void dump_device_int_array(const char* name,
     }
     */
     // printf("two_d=%d", two_d);
-    // fprintf(stderr, "two_d=%d, n=%d: on %s\n", two_d, n, name);
+    fprintf(stderr, "two_d=%d, n=%d, blocks=%d, threads_per_block=%d: on %s\n", two_d, n, blocks, threads_per_block, name);
     /* 
     for (int i = 0; i < n; ++i) {
         if ((i % 16) == 0) fprintf(stderr, "\n%6d:", i);
@@ -116,7 +122,8 @@ void exclusive_scan(int* input, int N, int* result)
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
     N = nextPow2(N); // round N to next power of 2
-    // int threads_per_block;
+    int threads_per_block;
+    int threads_needed;
     // if (N < 4194304)
     //     threads_per_block = 256;
     // else
@@ -124,25 +131,37 @@ void exclusive_scan(int* input, int N, int* result)
     // upsweep phase
     for (int two_d = 1; two_d <= N/2; two_d *= 2) {
         int two_dplus1 = two_d * 2;
+        threads_needed = N / two_dplus1;
+        if (threads_needed < THREADS_PER_BLOCK)
+            threads_per_block = threads_needed;
+        else
+            threads_per_block = THREADS_PER_BLOCK;
         // launch upsweep kernel
-        int blocks = ((N / two_dplus1)  / THREADS_PER_BLOCK) + 1;
-        upsweep_kernel<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
+        size_t work   = CEIL_DIV((size_t)N, (size_t)two_dplus1);       // how many items
+        size_t blocks = CEIL_DIV(work, (size_t)threads_per_block);     // grid size
+        upsweep_kernel<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
         cudaDeviceSynchronize();
-        // dump_device_int_array("up", result, N, two_d);
+        // dump_device_int_array("up", result, N, two_d, blocks, threads_per_block);
     }
 
     // set last element to zero
     cudaMemset(result + N - 1, 0, sizeof(int));
 
-    // downsweep phase
+    // // downsweep phase
     for (int two_d = N/2; two_d >= 1; two_d /= 2) {
         int two_dplus1 = 2*two_d;
-        int blocks = ((N / two_dplus1) / THREADS_PER_BLOCK) + 1;
-        downsweep_add<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
-        dump_device_int_array("d1", result, N, two_d);
+        threads_needed = N / two_dplus1;
+        if (threads_needed < THREADS_PER_BLOCK)
+            threads_per_block = threads_needed;
+        else
+            threads_per_block = THREADS_PER_BLOCK;
+        size_t work   = CEIL_DIV((size_t)N, (size_t)two_dplus1);       // how many items
+        size_t blocks = CEIL_DIV(work, (size_t)threads_per_block);     // grid size
+        downsweep_add<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
+        // dump_device_int_array("d1", result, N, two_d, blocks, threads_per_block);
         cudaDeviceSynchronize();
-        downsweep_set<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
-        dump_device_int_array("d2", result, N, two_d);
+        downsweep_set<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
+        // dump_device_int_array("d2", result, N, two_d, blocks, threads_per_block);
     }
 
 }
