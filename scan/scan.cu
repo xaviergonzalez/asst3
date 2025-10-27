@@ -12,7 +12,7 @@
 
 #include "CycleTimer.h"
 
-#define THREADS_PER_BLOCK 16 // 256
+#define THREADS_PER_BLOCK 256
 
 
 // helper function to round an integer up to the next power of 2
@@ -117,16 +117,16 @@ void exclusive_scan(int* input, int N, int* result)
     // scan.
     N = nextPow2(N); // round N to next power of 2
     int threads_per_block;
-    if (N < 4194304)
-        threads_per_block = 256;
-    else
-        threads_per_block = THREADS_PER_BLOCK;
+    // if (N < 4194304)
+    //     threads_per_block = 256;
+    // else
+    //     threads_per_block = THREADS_PER_BLOCK;
     // upsweep phase
     for (int two_d = 1; two_d <= N/2; two_d *= 2) {
         int two_dplus1 = two_d * 2;
         // launch upsweep kernel
-        int blocks = N / (two_dplus1 * threads_per_block) + 1;
-        upsweep_kernel<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
+        int blocks = ((N / two_dplus1)  / threads_per_block) + 1;
+        upsweep_kernel<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
         cudaDeviceSynchronize();
         // dump_device_int_array("up", result, N, two_d);
     }
@@ -137,7 +137,7 @@ void exclusive_scan(int* input, int N, int* result)
     // downsweep phase
     for (int two_d = N/2; two_d >= 1; two_d /= 2) {
         int two_dplus1 = 2*two_d;
-        int blocks = N / (two_dplus1 * THREADS_PER_BLOCK) + 1;
+        int blocks = ((N / two_dplus1) / threads_per_block) + 1;
         downsweep_add<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
         dump_device_int_array("d1", result, N, two_d);
         cudaDeviceSynchronize();
