@@ -12,7 +12,7 @@
 
 #include "CycleTimer.h"
 
-#define THREADS_PER_BLOCK 512
+#define THREADS_PER_BLOCK 256
 
 #define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
 
@@ -266,6 +266,20 @@ double cudaScanThrust(int* inarray, int* end, int* resultarray) {
 // indices `i` for which `device_input[i] == device_input[i+1]`.
 //
 // Returns the total number of pairs found
+
+__global__ void
+compare_shift_left(int length, int* array, int* output){
+    /* comparison of adjacent elements in array
+    put them into output */
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if ((idx < length) && (idx > 0)) {
+        if (array[idx-1] == array[idx]) {
+            // Mark the position for output
+            output[idx-1] = 1;
+        }
+    }
+}
+
 int find_repeats(int* device_input, int length, int* device_output) {
 
     // CS149 TODO:
@@ -279,6 +293,17 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // exclusive_scan function with them. However, your implementation
     // must ensure that the results of find_repeats are correct given
     // the actual array length.
+
+    /* device input has length rounded_length. it is a device array. */
+    int* device_mask;  // device array to hold the mask of whether or not device_input[i] == device_input[i+1]
+    int rounded_length = nextPow2(length);
+    cudaMalloc((void **)&device_mask, rounded_length * sizeof(int));
+    // initialize device_mask to zero
+    cudaMemset(device_mask, 0, rounded_length * sizeof(int));
+    compare_shift_left<<<CEIL_DIV(length, THREADS_PER_BLOCK), THREADS_PER_BLOCK>>>(length, device_input, device_mask);
+    // TODO: pscan device_mask to get positions
+
+
 
     return 0; 
 }
