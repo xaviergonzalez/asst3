@@ -12,7 +12,7 @@
 
 #include "CycleTimer.h"
 
-#define THREADS_PER_BLOCK 256
+#define THREADS_PER_BLOCK 16 // 256
 
 
 // helper function to round an integer up to the next power of 2
@@ -30,6 +30,7 @@ static inline int nextPow2(int n) {
 static inline void dump_device_int_array(const char* name,
                                          const int* dptr, int n, int two_d)
 {
+    /*
     int* h = (int*)malloc(n * sizeof(int));
     if (!h) { fprintf(stderr, "malloc failed\n"); return; }
 
@@ -42,14 +43,16 @@ static inline void dump_device_int_array(const char* name,
         free(h);
         return;
     }
-    printf("two_d=%d", two_d);
-    fprintf(stderr, "%s (n=%d):", name, n);
+    */
+    // printf("two_d=%d", two_d);
+    // fprintf(stderr, "two_d=%d, n=%d: on %s\n", two_d, n, name);
+    /* 
     for (int i = 0; i < n; ++i) {
         if ((i % 16) == 0) fprintf(stderr, "\n%6d:", i);
         fprintf(stderr, " %d", h[i]);
     }
-    fprintf(stderr, "\n");
-    free(h);
+    fprintf(stderr, "\n"); */
+    // free(h);
 }
 
 // exclusive_scan --
@@ -78,7 +81,7 @@ upsweep_kernel(int N, int two_d, int two_dplus1, int* array){
 */
     int idx = blockIdx.x * blockDim.x + threadIdx.x;  // processor index
     int arr_pos = (idx + 1) * two_dplus1 - 1;  // position in the array to be processed
-    if (arr_pos < N-1)
+    if (arr_pos < N)
         array[arr_pos] += array[arr_pos - two_d];
 }
 
@@ -112,29 +115,34 @@ void exclusive_scan(int* input, int N, int* result)
     // on the CPU.  Your implementation will need to make multiple calls
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
-    
-    // set last element to zero
-    cudaMemset(result + N - 1, 0, sizeof(int));
-
+    N = nextPow2(N); // round N to next power of 2
+    int threads_per_block;
+    if (N < 4194304)
+        threads_per_block = 256;
+    else
+        threads_per_block = THREADS_PER_BLOCK;
     // upsweep phase
-    for (int two_d = 1; two_d < N; two_d *= 2) {
+    for (int two_d = 1; two_d <= N/2; two_d *= 2) {
         int two_dplus1 = two_d * 2;
         // launch upsweep kernel
-        int blocks = N / (two_dplus1 * THREADS_PER_BLOCK) + 1;
-        upsweep_kernel<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
+        int blocks = N / (two_dplus1 * threads_per_block) + 1;
+        upsweep_kernel<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
         cudaDeviceSynchronize();
         // dump_device_int_array("up", result, N, two_d);
     }
+
+    // set last element to zero
+    cudaMemset(result + N - 1, 0, sizeof(int));
 
     // downsweep phase
     for (int two_d = N/2; two_d >= 1; two_d /= 2) {
         int two_dplus1 = 2*two_d;
         int blocks = N / (two_dplus1 * THREADS_PER_BLOCK) + 1;
         downsweep_add<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
-        // dump_device_int_array("d1", result, N, two_d);
+        dump_device_int_array("d1", result, N, two_d);
         cudaDeviceSynchronize();
         downsweep_set<<<blocks, THREADS_PER_BLOCK>>>(N, two_d, two_dplus1, result);
-        // dump_device_int_array("d2", result, N, two_d);
+        dump_device_int_array("d2", result, N, two_d);
     }
 
 }

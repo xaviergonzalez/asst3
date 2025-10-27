@@ -185,10 +185,18 @@ int main(int argc, char** argv) {
                 fprintf(stderr,
                         "Error: Device exclusive_scan outputs incorrect result."
                         " A[%d] = %d, expecting %d.\n",
+                        i-1, resultarray[i-1], checkarray[i-1]);
+                fprintf(stderr,
+                        "Error: Device exclusive_scan outputs incorrect result."
+                        " A[%d] = %d, expecting %d.\n",
                         i, resultarray[i], checkarray[i]);
+                fprintf(stderr,
+                        "Error: Device exclusive_scan outputs incorrect result."
+                        " A[%d] = %d, expecting %d.\n",
+                        i+1, resultarray[i+1], checkarray[i+1]);        
                 /* student added*/
-                dump_int_array("resultarray", resultarray, N);
-                dump_int_array("checkarray",  checkarray,  N);
+                // dump_int_array("resultarray", resultarray, N+1);
+                // dump_int_array("checkarray",  checkarray,  N+1);
                 /* ended student added*/
                 exit(1);
             }
