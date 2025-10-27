@@ -137,10 +137,9 @@ void exclusive_scan(int* input, int N, int* result)
         else
             threads_per_block = THREADS_PER_BLOCK;
         // launch upsweep kernel
-        size_t work   = CEIL_DIV((size_t)N, (size_t)two_dplus1);       // how many items
-        size_t blocks = CEIL_DIV(work, (size_t)threads_per_block);     // grid size
+        int blocks = CEIL_DIV(threads_needed, threads_per_block);    
         upsweep_kernel<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
         // dump_device_int_array("up", result, N, two_d, blocks, threads_per_block);
     }
 
@@ -155,11 +154,10 @@ void exclusive_scan(int* input, int N, int* result)
             threads_per_block = threads_needed;
         else
             threads_per_block = THREADS_PER_BLOCK;
-        size_t work   = CEIL_DIV((size_t)N, (size_t)two_dplus1);       // how many items
-        size_t blocks = CEIL_DIV(work, (size_t)threads_per_block);     // grid size
+        int blocks = CEIL_DIV(threads_needed, threads_per_block);
         downsweep_add<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
         // dump_device_int_array("d1", result, N, two_d, blocks, threads_per_block);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
         downsweep_set<<<blocks, threads_per_block>>>(N, two_d, two_dplus1, result);
         // dump_device_int_array("d2", result, N, two_d, blocks, threads_per_block);
     }
