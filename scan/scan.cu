@@ -29,38 +29,6 @@ static inline int nextPow2(int n) {
     return n;
 }
 
-static inline void dump_device_int_array(const char* name,
-                                         const int* dptr,
-                                         int n, 
-                                         int two_d, 
-                                         int blocks, 
-                                         int threads_per_block)
-{
-    /*
-    int* h = (int*)malloc(n * sizeof(int));
-    if (!h) { fprintf(stderr, "malloc failed\n"); return; }
-
-    // Ensure all prior kernels finished before we read
-    cudaDeviceSynchronize();
-
-    cudaError_t err = cudaMemcpy(h, dptr, n*sizeof(int), cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed in dump (%s)\n", cudaGetErrorString(err));
-        free(h);
-        return;
-    }
-    */
-    // printf("two_d=%d", two_d);
-    fprintf(stderr, "two_d=%d, n=%d, blocks=%d, threads_per_block=%d: on %s\n", two_d, n, blocks, threads_per_block, name);
-    /* 
-    for (int i = 0; i < n; ++i) {
-        if ((i % 16) == 0) fprintf(stderr, "\n%6d:", i);
-        fprintf(stderr, " %d", h[i]);
-    }
-    fprintf(stderr, "\n"); */
-    // free(h);
-}
-
 // exclusive_scan --
 //
 // Implementation of an exclusive scan on global memory array `input`,
@@ -276,7 +244,7 @@ compare_shift_left(int length, int* array, int* mask_output, int* val_output){
         if (array[idx-1] == array[idx]) {
             // Mark the position for output
             mask_output[idx-1] = 1;
-            val_output[idx-1] = array[idx-1];
+            val_output[idx-1] = 1;
         }
     }
 }
@@ -291,6 +259,20 @@ scatter_repeat_indices(int length, int* output, int* mask, int* vals){
         }
     }
 
+}
+
+void dump_device_int_array(const char* name,
+                            const int* dptr,
+                            int length){
+    int* hptr = (int*)malloc(length * sizeof(int));
+    cudaDeviceSynchronize();
+    cudaMemcpy(hptr, dptr, length * sizeof(int), cudaMemcpyDeviceToHost);
+    fprintf(stderr, "%s:", name);
+    for (int i = 0; i < length; i++) {
+        fprintf(stderr, "%d ", hptr[i]);
+    }
+    fprintf(stderr, "\n");
+    free(hptr);
 }
 
 int find_repeats(int* device_input, int length, int* device_output) {
@@ -324,6 +306,12 @@ int find_repeats(int* device_input, int length, int* device_output) {
     scatter_repeat_indices<<<CEIL_DIV(length, THREADS_PER_BLOCK), THREADS_PER_BLOCK>>>(length, device_output, device_mask, device_vals);
     int output_length = 0;
     cudaMemcpy(&output_length, device_vals + length - 1, sizeof(int), cudaMemcpyDeviceToHost);
+    // dump_device_int_array("inpu", device_input, length);
+    // dump_device_int_array("mask", device_mask, length);
+    // dump_device_int_array("vals", device_vals, length);
+    // dump_device_int_array("outp", device_output, length);
+    cudaFree(device_mask);
+    cudaFree(device_vals);
     return output_length; 
 }
 
