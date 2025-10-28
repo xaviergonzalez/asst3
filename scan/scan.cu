@@ -268,16 +268,29 @@ double cudaScanThrust(int* inarray, int* end, int* resultarray) {
 // Returns the total number of pairs found
 
 __global__ void
-compare_shift_left(int length, int* array, int* output){
+compare_shift_left(int length, int* array, int* mask_output, int* val_output){
     /* comparison of adjacent elements in array
     put them into output */
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if ((idx < length) && (idx > 0)) {
         if (array[idx-1] == array[idx]) {
             // Mark the position for output
-            output[idx-1] = 1;
+            mask_output[idx-1] = 1;
+            val_output[idx-1] = array[idx-1];
         }
     }
+}
+
+__global__ void
+scatter_repeat_indices(int length, int* output, int* mask, int* vals){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if ((idx < length) && (idx >= 0)) {
+        // If the mask indicates a repeat, write the index to the output
+        if (mask[idx] == 1) {
+            output[vals[idx]] = idx; 
+        }
+    }
+
 }
 
 int find_repeats(int* device_input, int length, int* device_output) {
@@ -294,18 +307,24 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // must ensure that the results of find_repeats are correct given
     // the actual array length.
 
-    /* device input has length rounded_length. it is a device array. */
-    int* device_mask;  // device array to hold the mask of whether or not device_input[i] == device_input[i+1]
+    /*  Args:
+        device_input: device array, shape (rounded_length,)
+        device_output: device_array, shape (rounded_length,). Will be the mask */
+    int* device_mask; // (rounded_length,) device array to hold the mask of repeats
+    int* device_vals;  // (rounded_length,) device array to hold the values from the pscan
     int rounded_length = nextPow2(length);
     cudaMalloc((void **)&device_mask, rounded_length * sizeof(int));
-    // initialize device_mask to zero
+    cudaMalloc((void **)&device_vals, rounded_length * sizeof(int));
+    // initialize device_output and device_vals to zero
     cudaMemset(device_mask, 0, rounded_length * sizeof(int));
-    compare_shift_left<<<CEIL_DIV(length, THREADS_PER_BLOCK), THREADS_PER_BLOCK>>>(length, device_input, device_mask);
-    // TODO: pscan device_mask to get positions
-
-
-
-    return 0; 
+    cudaMemset(device_vals, 0, rounded_length * sizeof(int));
+    compare_shift_left<<<CEIL_DIV(length, THREADS_PER_BLOCK), THREADS_PER_BLOCK>>>(length, device_input, device_mask, device_vals);
+    // pscan device_vals to get the indices
+    exclusive_scan(device_vals, rounded_length, device_vals);
+    scatter_repeat_indices<<<CEIL_DIV(length, THREADS_PER_BLOCK), THREADS_PER_BLOCK>>>(length, device_output, device_mask, device_vals);
+    int output_length = 0;
+    cudaMemcpy(&output_length, device_vals + length - 1, sizeof(int), cudaMemcpyDeviceToHost);
+    return output_length; 
 }
 
 
