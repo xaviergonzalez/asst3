@@ -18,7 +18,7 @@
 #define SCAN_BLOCK_DIM 256
 #include "exclusiveScan.cu_inl"
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 #define cudaCheckError(ans)                    \
@@ -493,7 +493,6 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
     //     return;
     short imageWidth = cuConstRendererParams.imageWidth;
     short imageHeight = cuConstRendererParams.imageHeight;
-    int numCircles = cuConstRendererParams.numCircles;
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
     float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
@@ -501,7 +500,7 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
     float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (id_y * imageWidth + id_x)]);
     extern __shared__ uint sharedMem[];
     uint* inTileMask = sharedMem;                  
-    uint* inTileIndices = &sharedMem[numCircles];   
+    uint* inTileIndices = &sharedMem[endCircle - startCircle]; // max size is endCircle - startCircle
     __shared__ uint countCirclesInTile, indsProc, numWhiles;
     __shared__ float boxL, boxR, boxT, boxB;
     __shared__ uint prefixSumInput[SCAN_BLOCK_DIM];
@@ -530,7 +529,7 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
     // implement a gather on inTile using xScan
     while (indsProc < countCirclesInTile){
         int src = thread_id + SCAN_BLOCK_DIM * numWhiles;
-        uint v = (src < numCircles) ? inTileMask[src] : 0u;  
+        uint v = (src < (endCircle - startCircle)) ? inTileMask[src] : 0u;
         prefixSumInput[thread_id] = v;
         __syncthreads();
         sharedMemExclusiveScan(thread_id, prefixSumInput, prefixSumOutput, prefixSumScratch, SCAN_BLOCK_DIM);
@@ -555,6 +554,7 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
         float3 circ_pos = *(float3 *)(&cuConstRendererParams.position[index3]);
         shadePixel(circ_idx, pixelCenterNorm, circ_pos, imgPtr);
     }
+    __syncthreads();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -789,11 +789,14 @@ CudaRenderer::render() {
     uint start, end;
     printf("num_loops: %d\n", num_loops);
     for (int i=0; i<num_loops; i++){
+        printf("Rendering loop %d/%d\n", i, num_loops);
         start = i * MAX_CIRCLES;
         end = min(start + MAX_CIRCLES, numCircles);
-        kernelRenderPixelsPerTile<<<gridDim, blockDim, 2 * MAX_CIRCLES * sizeof(int)>>>(start, end); // attempt 2: each tile loads circles into shared memory
+        kernelRenderPixelsPerTile<<<gridDim, blockDim, 2 * (end - start) * sizeof(int)>>>(start, end); // attempt 2: each tile loads circles into shared memory
+        cudaDeviceSynchronize();
+        //cudaCheckError(cudaDeviceSynchronize());
     }
     // cudaGetLastError();
     // cudaDeviceSynchronize();
-    cudaCheckError(cudaDeviceSynchronize());
+    // cudaCheckError(cudaDeviceSynchronize());
 }
