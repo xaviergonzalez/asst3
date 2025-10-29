@@ -488,7 +488,7 @@ __global__ void kernelRenderPixelsPerTile()
     int id_x = blockIdx.x * blockDim.x + threadIdx.x;
     int id_y = blockIdx.y * blockDim.y + threadIdx.y;
     int thread_id = threadIdx.y * blockDim.x + threadIdx.x; // unique id for each thread in the block
-    bool inBounds = (id_x < imageWidth) && (id_y < imageHeight);
+    bool inBounds = (id_x < cuConstRendererParams.imageWidth) && (id_y < cuConstRendererParams.imageHeight);
     // if ((id_x >= cuConstRendererParams.imageWidth) || (id_y >= cuConstRendererParams.imageHeight))
     //     return;
     short imageWidth = cuConstRendererParams.imageWidth;
@@ -527,7 +527,9 @@ __global__ void kernelRenderPixelsPerTile()
     __syncthreads();
     // implement a gather on inTile using xScan
     while (indsProc < countCirclesInTile){
-        prefixSumInput[thread_id] = inTile[thread_id + SCAN_BLOCK_DIM * numWhiles];
+        int src = thread_id + SCAN_BLOCK_DIM * numWhiles;
+        uint v = (src < numCircles) ? inTile[src] : 0u;  
+        prefixSumInput[thread_id] = v;
         __syncthreads();
         sharedMemExclusiveScan(thread_id, prefixSumInput, prefixSumOutput, prefixSumScratch, SCAN_BLOCK_DIM);
         if (prefixSumInput[thread_id]==1){
