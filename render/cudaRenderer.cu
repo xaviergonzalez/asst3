@@ -18,6 +18,27 @@
 #define SCAN_BLOCK_DIM 256
 #include "exclusiveScan.cu_inl"
 
+#define DEBUG
+
+#ifdef DEBUG
+#define cudaCheckError(ans)                    \
+    {                                          \
+        cudaAssert((ans), __FILE__, __LINE__); \
+    }
+inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort = true)
+{
+    if (code != cudaSuccess)
+    {
+        fprintf(stderr, "CUDA Error: %s at %s:%d\n",
+                cudaGetErrorString(code), file, line);
+        if (abort)
+            exit(code);
+    }
+}
+#else
+#define cudaCheckError(ans) ans
+#endif
+
 // // thrust
 // #include <thrust/scan.h>
 // #include <thrust/device_ptr.h>
@@ -758,5 +779,5 @@ CudaRenderer::render() {
                     (imageHeight + blockDim.y - 1) / blockDim.y);
     // kernelRenderPixels<<<gridDim, blockDim>>>();  // attempt 1: each pixel loops through all the circles
     kernelRenderPixelsPerTile<<<gridDim, blockDim, numCircles * sizeof(int)>>>(); // attempt 2: each tile loads circles into shared memory
-    cudaDeviceSynchronize();
+    cudaCheckError(cudaDeviceSynchronize());
 }
