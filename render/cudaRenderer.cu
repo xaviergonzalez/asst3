@@ -495,12 +495,17 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
     short imageHeight = cuConstRendererParams.imageHeight;
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
-    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
-                                         invHeight * (static_cast<float>(id_y) + 0.5f));
-    float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (id_y * imageWidth + id_x)]);
+    float4* imgPtr = nullptr;
+    float2 pixelCenterNorm;
+    if (inBounds) {
+        pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
+                                      invHeight * (static_cast<float>(id_y) + 0.5f));
+        imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (id_y * imageWidth + id_x)]);
+    }
+    const uint chunkSize = endCircle - startCircle;
     extern __shared__ uint sharedMem[];
     uint* inTileMask = sharedMem;                  
-    uint* inTileIndices = &sharedMem[endCircle - startCircle]; // max size is endCircle - startCircle
+    uint* inTileIndices = sharedMem + chunkSize; // max size is endCircle - startCircle
     __shared__ uint countCirclesInTile, indsProc, numWhiles;
     __shared__ float boxL, boxR, boxT, boxB;
     __shared__ uint prefixSumInput[SCAN_BLOCK_DIM];
@@ -516,14 +521,15 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
         boxT = (blockIdx.y + 1) * blockDim.y * invHeight;
     }
     __syncthreads();
-    for (int i=thread_id+startCircle; i<endCircle; i+=blockDim.x * blockDim.y)
+    for (int local=thread_id; local<chunkSize; local+=blockDim.x * blockDim.y)
     {
         // read position and radius
-        int index3 = 3 * i;
+        int idx = startCircle + local;
+        int index3 = 3 * idx;
         float3 p = *(float3 *)(&cuConstRendererParams.position[index3]);
-        float rad = cuConstRendererParams.radius[i];
-        inTileMask[i] = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
-        atomicAdd(&countCirclesInTile, inTileMask[i]);
+        float rad = cuConstRendererParams.radius[idx];
+        inTileMask[local] = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+        atomicAdd(&countCirclesInTile, inTileMask[local]);
     }
     __syncthreads();
     // implement a gather on inTile using xScan
@@ -789,14 +795,15 @@ CudaRenderer::render() {
     uint start, end;
     printf("num_loops: %d\n", num_loops);
     for (int i=0; i<num_loops; i++){
-        printf("Rendering loop %d/%d\n", i, num_loops);
+        // printf("Rendering loop %d/%d\n", i, num_loops);
         start = i * MAX_CIRCLES;
         end = min(start + MAX_CIRCLES, numCircles);
+        // printf("end is %d and is the min of %d and %d\n", end, start + MAX_CIRCLES, numCircles);
         kernelRenderPixelsPerTile<<<gridDim, blockDim, 2 * (end - start) * sizeof(int)>>>(start, end); // attempt 2: each tile loads circles into shared memory
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
         //cudaCheckError(cudaDeviceSynchronize());
     }
     // cudaGetLastError();
-    // cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
     // cudaCheckError(cudaDeviceSynchronize());
 }
