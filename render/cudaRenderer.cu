@@ -781,5 +781,6 @@ CudaRenderer::render() {
                     (imageHeight + blockDim.y - 1) / blockDim.y);
     // kernelRenderPixels<<<gridDim, blockDim>>>();  // attempt 1: each pixel loops through all the circles
     kernelRenderPixelsPerTile<<<gridDim, blockDim, numCircles * sizeof(int)>>>(); // attempt 2: each tile loads circles into shared memory
-    cudaCheckError(cudaDeviceSynchronize());
+    cudaDeviceSynchronize();
+    // cudaCheckError(cudaDeviceSynchronize());
 }
