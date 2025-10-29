@@ -540,7 +540,7 @@ __global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
         __syncthreads();
         sharedMemExclusiveScan(thread_id, prefixSumInput, prefixSumOutput, prefixSumScratch, SCAN_BLOCK_DIM);
         if (prefixSumInput[thread_id]==1){
-            inTileIndices[prefixSumOutput[thread_id] + indsProc] = thread_id + SCAN_BLOCK_DIM * numWhiles;
+            inTileIndices[prefixSumOutput[thread_id] + indsProc] = startCircle + thread_id + SCAN_BLOCK_DIM * numWhiles;
         }
         __syncthreads();
         if (thread_id==0){
