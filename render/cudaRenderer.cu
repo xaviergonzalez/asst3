@@ -18,7 +18,7 @@
 #define SCAN_BLOCK_DIM 256
 #include "exclusiveScan.cu_inl"
 
-// #define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
 #define cudaCheckError(ans)                    \
@@ -481,7 +481,7 @@ __global__ void kernelRenderPixels(){
     }
 }
 
-__global__ void kernelRenderPixelsPerTile()
+__global__ void kernelRenderPixelsPerTile(uint startCircle, uint endCircle)
 {
     /* Goal: all the threads in a thread block are in the same tile
     So, using all the threads in the thread block, whittle down the number of circles*/
@@ -517,7 +517,7 @@ __global__ void kernelRenderPixelsPerTile()
         boxT = (blockIdx.y + 1) * blockDim.y * invHeight;
     }
     __syncthreads();
-    for (int i=thread_id; i<numCircles; i+=blockDim.x * blockDim.y)
+    for (int i=thread_id+startCircle; i<endCircle; i+=blockDim.x * blockDim.y)
     {
         // read position and radius
         int index3 = 3 * i;
@@ -783,7 +783,17 @@ CudaRenderer::render() {
     dim3 gridDim((imageWidth + blockDim.x - 1) / blockDim.x,
                     (imageHeight + blockDim.y - 1) / blockDim.y);
     // kernelRenderPixels<<<gridDim, blockDim>>>();  // attempt 1: each pixel loops through all the circles
-    kernelRenderPixelsPerTile<<<gridDim, blockDim, 2 * numCircles * sizeof(int)>>>(); // attempt 2: each tile loads circles into shared memory
+    printf("Rendering with %d circles\n", numCircles);
+    uint MAX_CIRCLES = 4096; // max circles that can fit in shared memory
+    uint num_loops = (numCircles + MAX_CIRCLES - 1) / MAX_CIRCLES;
+    uint start, end;
+    printf("num_loops: %d\n", num_loops);
+    for (int i=0; i<num_loops; i++){
+        start = i * MAX_CIRCLES;
+        end = min(start + MAX_CIRCLES, numCircles);
+        kernelRenderPixelsPerTile<<<gridDim, blockDim, 2 * MAX_CIRCLES * sizeof(int)>>>(start, end); // attempt 2: each tile loads circles into shared memory
+    }
+    // cudaGetLastError();
     // cudaDeviceSynchronize();
     cudaCheckError(cudaDeviceSynchronize());
 }
