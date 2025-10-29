@@ -676,7 +676,8 @@ CudaRenderer::render() {
 
     // student code
     /* initial attempt: we are going to parallize over pixels.*/
-    int numPixels = imageWidth * imageHeight;
+    int imageWidth = image->width;
+    int imageHeight = image->height;
     dim3 blockDim(16, 16);
     dim3 gridDim((imageWidth + blockDim.x - 1) / blockDim.x,
                     (imageHeight + blockDim.y - 1) / blockDim.y);
