@@ -441,6 +441,7 @@ __global__ void kernelRenderPixels(){
         return;
     short imageWidth = cuConstRendererParams.imageWidth;
     short imageHeight = cuConstRendererParams.imageHeight;
+    int numCircles = cuConstRendererParams.numCircles;
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
     float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
@@ -451,7 +452,7 @@ __global__ void kernelRenderPixels(){
     for (int circ_idx=0; circ_idx<numCircles; circ_idx++){
         int index3 = 3 * circ_idx;
         float3 circ_pos = *(float3 *)(&cuConstRendererParams.position[index3]);
-        shadePixel(i, pixelCenterNorm,circ_pos, imgPtr);
+        shadePixel(circ_idx, pixelCenterNorm,circ_pos, imgPtr);
     }
 }
 
@@ -679,6 +680,6 @@ CudaRenderer::render() {
     dim3 blockDim(16, 16);
     dim3 gridDim((imageWidth + blockDim.x - 1) / blockDim.x,
                     (imageHeight + blockDim.y - 1) / blockDim.y);
-    kernelRenderPixels<<<>>>(gridDim, blockDim);
+    kernelRenderPixels<<<gridDim, blockDim>>>();
     cudaDeviceSynchronize();
 }
