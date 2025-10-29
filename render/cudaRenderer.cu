@@ -18,7 +18,7 @@
 #define SCAN_BLOCK_DIM 256
 #include "exclusiveScan.cu_inl"
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 #define cudaCheckError(ans)                    \
@@ -537,6 +537,7 @@ __global__ void kernelRenderPixelsPerTile()
         if (prefixSumInput[thread_id]==1){
             inTileIndices[prefixSumOutput[thread_id] + indsProc] = thread_id + SCAN_BLOCK_DIM * numWhiles;
         }
+        __syncthreads();
         if (thread_id==0){
             indsProc += prefixSumOutput[SCAN_BLOCK_DIM-1];
             indsProc += prefixSumInput[SCAN_BLOCK_DIM-1];
@@ -605,10 +606,10 @@ CudaRenderer::getImage() {
 
     printf("Copying image data from device\n");
 
-    cudaMemcpy(image->data,
+    cudaCheckError(cudaMemcpy(image->data,
                cudaDeviceImageData,
                sizeof(float) * 4 * image->width * image->height,
-               cudaMemcpyDeviceToHost);
+               cudaMemcpyDeviceToHost));
 
     return image;
 }
@@ -736,7 +737,7 @@ CudaRenderer::clearImage() {
     } else {
         kernelClearImage<<<gridDim, blockDim>>>(1.f, 1.f, 1.f, 1.f);
     }
-    cudaDeviceSynchronize();
+    cudaCheckError(cudaDeviceSynchronize());
 }
 
 // advanceAnimation --
