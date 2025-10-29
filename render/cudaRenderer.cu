@@ -14,11 +14,13 @@
 #include "sceneLoader.h"
 #include "util.h"
 
-// thrust
-#include <thrust/scan.h>
-#include <thrust/device_ptr.h>
-#include <thrust/device_malloc.h>
-#include <thrust/device_free.h>
+#include "circleBoxTest.cu_inl"
+
+// // thrust
+// #include <thrust/scan.h>
+// #include <thrust/device_ptr.h>
+// #include <thrust/device_malloc.h>
+// #include <thrust/device_free.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
@@ -456,6 +458,53 @@ __global__ void kernelRenderPixels(){
     }
 }
 
+__global__ void kernelRenderPixelsPerTile()
+{
+    /* Goal: all the threads in a thread block are in the same tile
+    So, using all the threads in the thread block, whittle down the number of circles*/
+    int id_x = blockIdx.x * blockDim.x + threadIdx.x;
+    int id_y = blockIdx.y * blockDim.y + threadIdx.y;
+    int thread_id = threadIdx.y. * blockDim.x + threadIdx.x; // unique id for each thread in the block
+    if ((id_x >= cuConstRendererParams.imageWidth) || (id_y >= cuConstRendererParams.imageHeight))
+        return;
+    short imageWidth = cuConstRendererParams.imageWidth;
+    short imageHeight = cuConstRendererParams.imageHeight;
+    int numCircles = cuConstRendererParams.numCircles;
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
+                                         invHeight * (static_cast<float>(id_y) + 0.5f));
+    float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (id_y * imageWidth + id_x)]);
+    extern __shared__ int inTileMask; // shared memory to store which circles are in the tile
+    __shared__ int countCirclesInTile;
+    __shared__ float boxL, boxR, boxT, boxB;
+    if (thread_id==0){
+        countCirclesInTile = 0;
+        boxL = blockIdx.x * blockDim.x * invWidth;
+        boxR = (blockIdx.x + 1) * blockDim.x * invWidth;
+        boxB = blockIdx.y * blockDim.y * invHeight;
+        boxT = (blockIdx.y + 1) * blockDim.y * invHeight;
+    }
+    __syncthreads();
+    for (int i=thread_id; i<numCircles; i+=blockDim.x * blockDim.y)
+    {
+        // read position and radius
+        float3 p = *(float3 *)(&cuConstRendererParams.position[index3]);
+        float rad = cuConstRendererParams.radius[index];
+        inTileMask[i] = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+        atomicAdd(&countCirclesInTile, inTileMask[i]);
+    }
+    __syncthreads();
+    // eventually we should use a pscan, but for now just loop through the circles
+    // blocker is I don't know how to get the memory to work
+    for (int circ_idx = 0; circ_idx < numCircles; circ_idx++)
+    {
+        int index3 = 3 * circ_idx;
+        float3 circ_pos = *(float3 *)(&cuConstRendererParams.position[index3]);
+        shadePixel(circ_idx, pixelCenterNorm, circ_pos, imgPtr);
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -681,6 +730,7 @@ CudaRenderer::render() {
     dim3 blockDim(16, 16);
     dim3 gridDim((imageWidth + blockDim.x - 1) / blockDim.x,
                     (imageHeight + blockDim.y - 1) / blockDim.y);
-    kernelRenderPixels<<<gridDim, blockDim>>>();
+    // kernelRenderPixels<<<gridDim, blockDim>>>();  // attempt 1: each pixel loops through all the circles
+    kernelRenderPixelsPerTile<<<gridDim, blockDim>>>(); // attempt 2: each tile loads circles into shared memory
     cudaDeviceSynchronize();
 }
