@@ -15,6 +15,8 @@
 #include "util.h"
 
 #include "circleBoxTest.cu_inl"
+#define SCAN_BLOCK_DIM 256
+#include "exclusiveScan.cu_inl"
 
 // // thrust
 // #include <thrust/scan.h>
@@ -464,7 +466,7 @@ __global__ void kernelRenderPixelsPerTile()
     So, using all the threads in the thread block, whittle down the number of circles*/
     int id_x = blockIdx.x * blockDim.x + threadIdx.x;
     int id_y = blockIdx.y * blockDim.y + threadIdx.y;
-    int thread_id = threadIdx.y. * blockDim.x + threadIdx.x; // unique id for each thread in the block
+    int thread_id = threadIdx.y * blockDim.x + threadIdx.x; // unique id for each thread in the block
     if ((id_x >= cuConstRendererParams.imageWidth) || (id_y >= cuConstRendererParams.imageHeight))
         return;
     short imageWidth = cuConstRendererParams.imageWidth;
@@ -475,11 +477,17 @@ __global__ void kernelRenderPixelsPerTile()
     float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
                                          invHeight * (static_cast<float>(id_y) + 0.5f));
     float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (id_y * imageWidth + id_x)]);
-    extern __shared__ int inTileMask; // shared memory to store which circles are in the tile
-    __shared__ int countCirclesInTile;
+    extern __shared__ uint inTileMask[]; // shared memory to store which circles are in the tile
+    extern __shared__ uint inTileIndices[]; // will come from a gather applied to the Mask
+    __shared__ uint countCirclesInTile, indsProc, numWhiles;
     __shared__ float boxL, boxR, boxT, boxB;
+    __shared__ uint prefixSumInput[SCAN_BLOCK_DIM];
+    __shared__ uint prefixSumOutput[SCAN_BLOCK_DIM];
+    __shared__ uint prefixSumScratch[2 * SCAN_BLOCK_DIM];
     if (thread_id==0){
         countCirclesInTile = 0;
+        indsProc = 0;
+        numWhiles = 0;
         boxL = blockIdx.x * blockDim.x * invWidth;
         boxR = (blockIdx.x + 1) * blockDim.x * invWidth;
         boxB = blockIdx.y * blockDim.y * invHeight;
@@ -489,16 +497,32 @@ __global__ void kernelRenderPixelsPerTile()
     for (int i=thread_id; i<numCircles; i+=blockDim.x * blockDim.y)
     {
         // read position and radius
+        int index3 = 3 * i;
         float3 p = *(float3 *)(&cuConstRendererParams.position[index3]);
-        float rad = cuConstRendererParams.radius[index];
+        float rad = cuConstRendererParams.radius[i];
         inTileMask[i] = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
         atomicAdd(&countCirclesInTile, inTileMask[i]);
     }
     __syncthreads();
-    // eventually we should use a pscan, but for now just loop through the circles
-    // blocker is I don't know how to get the memory to work
-    for (int circ_idx = 0; circ_idx < numCircles; circ_idx++)
+    // implement a gather on inTileMask using xScan
+    while (indsProc < countCirclesInTile){
+        prefixSumInput[thread_id] = inTileMask[thread_id + SCAN_BLOCK_DIM * numWhiles];
+        __syncthreads();
+        sharedMemExclusiveScan(thread_id, prefixSumInput, prefixSumOutput, prefixSumScratch, SCAN_BLOCK_DIM);
+        if (prefixSumInput[thread_id]==1){
+            inTileIndices[prefixSumOutput[thread_id] + indsProc] = thread_id + SCAN_BLOCK_DIM * numWhiles;
+        }
+        if (thread_id==0){
+            indsProc += prefixSumOutput[SCAN_BLOCK_DIM-1];
+            indsProc += prefixSumInput[SCAN_BLOCK_DIM-1];
+            numWhiles += 1;
+        }
+        __syncthreads();
+    }
+    // it would be nice to parallelize this last step (but I don't think I have the memory to do so)
+    for (int i = 0; i < countCirclesInTile; i++)
     {
+        int circ_idx = inTileIndices[i];
         int index3 = 3 * circ_idx;
         float3 circ_pos = *(float3 *)(&cuConstRendererParams.position[index3]);
         shadePixel(circ_idx, pixelCenterNorm, circ_pos, imgPtr);
