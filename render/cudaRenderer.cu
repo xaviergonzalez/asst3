@@ -14,6 +14,12 @@
 #include "sceneLoader.h"
 #include "util.h"
 
+// thrust
+#include <thrust/scan.h>
+#include <thrust/device_ptr.h>
+#include <thrust/device_malloc.h>
+#include <thrust/device_free.h>
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -427,6 +433,28 @@ __global__ void kernelRenderCircles() {
     }
 }
 
+__global__ void kernelRenderPixels(){
+    /* each thread works on a different pixel */
+    int id_x = blockIdx.x * blockDim.x + threadIdx.x;
+    int id_y = blockIdx.y * blockDim.y + threadIdx.y;
+    if ((id_x >= cuConstRendererParams.imageWidth) || (id_y >= cuConstRendererParams.imageHeight))
+        return;
+    short imageWidth = cuConstRendererParams.imageWidth;
+    short imageHeight = cuConstRendererParams.imageHeight;
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(id_x) + 0.5f),
+                                         invHeight * (static_cast<float>(id_y) + 0.5f));
+    float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (id_y * imageWidth + id_x)]);
+    // eventually we should use a pscan, but for now just loop through the circles
+    // blocker is I don't know how to get the memory to work
+    for (int circ_idx=0; circ_idx<numCircles; circ_idx++){
+        int index3 = 3 * circ_idx;
+        float3 circ_pos = *(float3 *)(&cuConstRendererParams.position[index3]);
+        shadePixel(i, pixelCenterNorm,circ_pos, imgPtr);
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -636,10 +664,21 @@ CudaRenderer::advanceAnimation() {
 void
 CudaRenderer::render() {
 
-    // 256 threads per block is a healthy number
-    dim3 blockDim(256, 1);
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
 
-    kernelRenderCircles<<<gridDim, blockDim>>>();
+    // starter code
+    // 256 threads per block is a healthy number
+    // dim3 blockDim(256, 1);
+    // dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
+
+    // kernelRenderCircles<<<gridDim, blockDim>>>();
+    // cudaDeviceSynchronize();
+
+    // student code
+    /* initial attempt: we are going to parallize over pixels.*/
+    int numPixels = imageWidth * imageHeight;
+    dim3 blockDim(16, 16);
+    dim3 gridDim((imageWidth + blockDim.x - 1) / blockDim.x,
+                    (imageHeight + blockDim.y - 1) / blockDim.y);
+    kernelRenderPixels<<<>>>(gridDim, blockDim);
     cudaDeviceSynchronize();
 }
