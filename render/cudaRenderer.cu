@@ -467,8 +467,9 @@ __global__ void kernelRenderPixelsPerTile()
     int id_x = blockIdx.x * blockDim.x + threadIdx.x;
     int id_y = blockIdx.y * blockDim.y + threadIdx.y;
     int thread_id = threadIdx.y * blockDim.x + threadIdx.x; // unique id for each thread in the block
-    if ((id_x >= cuConstRendererParams.imageWidth) || (id_y >= cuConstRendererParams.imageHeight))
-        return;
+    bool inBounds = (id_x < imageWidth) && (id_y < imageHeight);
+    // if ((id_x >= cuConstRendererParams.imageWidth) || (id_y >= cuConstRendererParams.imageHeight))
+    //     return;
     short imageWidth = cuConstRendererParams.imageWidth;
     short imageHeight = cuConstRendererParams.imageHeight;
     int numCircles = cuConstRendererParams.numCircles;
@@ -519,6 +520,8 @@ __global__ void kernelRenderPixelsPerTile()
         __syncthreads();
     }
     // it would be nice to parallelize this last step (but I don't think I have the memory to do so)
+    if (!inBounds)
+        return;
     for (int i = 0; i < countCirclesInTile; i++)
     {
         int circ_idx = inTile[i];
