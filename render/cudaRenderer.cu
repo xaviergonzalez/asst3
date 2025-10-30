@@ -15,7 +15,7 @@
 #include "util.h"
 
 #include "circleBoxTest.cu_inl"
-#define SCAN_BLOCK_DIM 256
+#define SCAN_BLOCK_DIM 1024
 #include "exclusiveScan.cu_inl"
 
 // #define DEBUG
@@ -785,12 +785,13 @@ CudaRenderer::render() {
     /* initial attempt: we are going to parallize over pixels.*/
     int imageWidth = image->width;
     int imageHeight = image->height;
-    dim3 blockDim(16, 16);
+    int blockwidth = 32;
+    dim3 blockDim(blockwidth, blockwidth);
     dim3 gridDim((imageWidth + blockDim.x - 1) / blockDim.x,
                     (imageHeight + blockDim.y - 1) / blockDim.y);
     // kernelRenderPixels<<<gridDim, blockDim>>>();  // attempt 1: each pixel loops through all the circles
     printf("Rendering with %d circles\n", numCircles);
-    uint MAX_CIRCLES = 4096; // max circles that can fit in shared memory
+    uint MAX_CIRCLES = 2048; // max circles that can fit in shared memory
     uint num_loops = (numCircles + MAX_CIRCLES - 1) / MAX_CIRCLES;
     uint start, end;
     printf("num_loops: %d\n", num_loops);
@@ -804,6 +805,6 @@ CudaRenderer::render() {
         //cudaCheckError(cudaDeviceSynchronize());
     }
     // cudaGetLastError();
-    cudaDeviceSynchronize();
-    // cudaCheckError(cudaDeviceSynchronize());
+    // cudaDeviceSynchronize();
+    cudaCheckError(cudaDeviceSynchronize());
 }
