@@ -612,10 +612,10 @@ CudaRenderer::getImage() {
 
     printf("Copying image data from device\n");
 
-    cudaCheckError(cudaMemcpy(image->data,
+    cudaMemcpy(image->data,
                cudaDeviceImageData,
                sizeof(float) * 4 * image->width * image->height,
-               cudaMemcpyDeviceToHost));
+               cudaMemcpyDeviceToHost);
 
     return image;
 }
@@ -743,7 +743,7 @@ CudaRenderer::clearImage() {
     } else {
         kernelClearImage<<<gridDim, blockDim>>>(1.f, 1.f, 1.f, 1.f);
     }
-    cudaCheckError(cudaDeviceSynchronize());
+    cudaDeviceSynchronize();
 }
 
 // advanceAnimation --
@@ -806,5 +806,5 @@ CudaRenderer::render() {
     }
     // cudaGetLastError();
     // cudaDeviceSynchronize();
-    cudaCheckError(cudaDeviceSynchronize());
+    cudaDeviceSynchronize();
 }
